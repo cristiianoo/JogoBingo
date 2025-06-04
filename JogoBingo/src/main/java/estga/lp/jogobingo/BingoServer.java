@@ -12,9 +12,8 @@ public class BingoServer {
     private static final int DRAW_INTERVAL_MS = 5000;
 
     private static final List<ClientHandler> clients = Collections.synchronizedList(new ArrayList<>());
-    private static final Set<Integer> drawnNumbers = new LinkedHashSet<>();
+    private static final Set<Integer> drawnNumbers = Collections.synchronizedSet(new LinkedHashSet<>());
     private static final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
-
     private static boolean gameStarted = false;
 
     public static void main(String[] args) throws IOException {
@@ -73,7 +72,7 @@ public class BingoServer {
                 in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
                 out = new PrintWriter(socket.getOutputStream(), true);
 
-                name = in.readLine(); // nome do jogador
+                name = in.readLine();
                 cardId = UUID.randomUUID().toString().substring(0, 8);
                 cardNumbers = generateCard();
 
@@ -112,19 +111,50 @@ public class BingoServer {
         }
 
         private void validateClaim(String claimType) {
-            if (claimType.equals("LINE")) {
-                broadcast("LINE_BY:" + name);
-            } else if (claimType.equals("BINGO")) {
-                broadcast("BINGO_BY:" + name);
-                sendMessage("WINNER");
-                synchronized (clients) {
-                    for (ClientHandler ch : clients) {
-                        if (!ch.name.equals(this.name)) {
-                            ch.sendMessage("LOSE");
+            Set<Integer> marked = new HashSet<>();
+            for (int n : cardNumbers) {
+                if (drawnNumbers.contains(n)) {
+                    marked.add(n);
+                }
+            }
+
+            boolean valid = false;
+
+            if ("LINE".equals(claimType)) {
+                for (int i = 0; i < 5; i++) {
+                    boolean line = true;
+                    for (int j = 0; j < 5; j++) {
+                        if (!marked.contains(cardNumbers[i * 5 + j])) {
+                            line = false;
+                            break;
                         }
                     }
+                    if (line) {
+                        valid = true;
+                        break;
+                    }
                 }
-                scheduler.shutdown();
+                if (valid) {
+                    broadcast("LINE_BY:" + name);
+                }
+            } else if ("BINGO".equals(claimType)) {
+                if (marked.size() == 25) {
+                    valid = true;
+                    broadcast("BINGO_BY:" + name);
+                    sendMessage("WINNER");
+                    synchronized (clients) {
+                        for (ClientHandler ch : clients) {
+                            if (!ch.name.equals(this.name)) {
+                                ch.sendMessage("LOSE");
+                            }
+                        }
+                    }
+                    scheduler.shutdown();
+                }
+            }
+
+            if (!valid) {
+                sendMessage("INVALID_CLAIM");
             }
         }
     }
