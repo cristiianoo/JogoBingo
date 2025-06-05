@@ -95,12 +95,17 @@ public class BingoServer {
         }
 
         private int[] generateCard() {
-            Set<Integer> nums = new LinkedHashSet<>();
-            Random rand = new Random();
-            while (nums.size() < 25) {
-                nums.add(rand.nextInt(99) + 1);
+            List<Integer> allNumbers = new ArrayList<>();
+            for (int i = 1; i <= 99; i++) {
+                allNumbers.add(i);
             }
-            return nums.stream().mapToInt(Integer::intValue).toArray();
+            Collections.shuffle(allNumbers);
+            
+            int[] card = new int[25];
+            for (int i = 0; i < 25; i++) {
+                card[i] = allNumbers.get(i);
+            }
+            return card;
         }
 
         private void checkAllReady() {

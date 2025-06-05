@@ -1,3 +1,5 @@
+package estga.lp.jogobingo;
+
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
 import java.awt.*;
@@ -12,11 +14,13 @@ public class BingoClient extends JFrame {
     private JButton readyButton, lineButton, bingoButton;
     private JButton[] cardButtons = new JButton[25];
     private JPanel drawnNumbersPanel;
+    private JScrollPane scrollPane;
     private Socket socket;
     private PrintWriter out;
     private BufferedReader in;
     private String name;
     private String cardId;
+    private Set<String> drawnNumbers = new HashSet<>();
 
     public BingoClient() {
         setTitle("Cliente Bingo ESTGA");
@@ -45,7 +49,6 @@ public class BingoClient extends JFrame {
         idPanel.setBorder(BorderFactory.createEmptyBorder(10, 0, 0, 10));
         idPanel.add(cardIdLabel);
         topPanel.add(idPanel, BorderLayout.EAST);
-
         add(topPanel, BorderLayout.NORTH);
 
         // Card Panel
@@ -56,11 +59,22 @@ public class BingoClient extends JFrame {
             int finalI = i;
             cell.setFont(new Font("Segoe UI", Font.BOLD, 20));
             cell.setBackground(Color.LIGHT_GRAY);
+            cell.setForeground(Color.BLACK);
             cell.setFocusPainted(false);
             cell.setEnabled(false);
             cell.addActionListener(e -> {
-                cell.setBackground(new Color(102, 255, 102));
-                cell.setForeground(Color.BLACK);
+                // Só permite marcar se o número foi sorteado
+                String number = cell.getText();
+                if (drawnNumbers.contains(number)) {
+                    cell.setBackground(new Color(102, 255, 102));
+                    cell.setForeground(Color.BLACK);
+                    cell.setEnabled(false); // Impede cliques adicionais
+                } else {
+                    JOptionPane.showMessageDialog(this, 
+                        "Só pode marcar números que já foram sorteados!", 
+                        "Número não sorteado", 
+                        JOptionPane.WARNING_MESSAGE);
+                }
             });
             cardButtons[i] = cell;
             cardPanel.add(cell);
@@ -71,8 +85,9 @@ public class BingoClient extends JFrame {
         drawnNumbersPanel = new JPanel();
         drawnNumbersPanel.setLayout(new BoxLayout(drawnNumbersPanel, BoxLayout.Y_AXIS));
         drawnNumbersPanel.setBorder(new TitledBorder("Números sorteados"));
-        JScrollPane scrollPane = new JScrollPane(drawnNumbersPanel);
+        scrollPane = new JScrollPane(drawnNumbersPanel);
         scrollPane.setPreferredSize(new Dimension(150, 0));
+        scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
         add(scrollPane, BorderLayout.EAST);
 
         // Bottom Panel
@@ -93,14 +108,12 @@ public class BingoClient extends JFrame {
         statusLabel = new JLabel("Status: Aguardando nome...");
         statusLabel.setHorizontalAlignment(SwingConstants.CENTER);
         statusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-
         bottomPanel.add(buttonsPanel, BorderLayout.NORTH);
         bottomPanel.add(statusLabel, BorderLayout.SOUTH);
         bottomPanel.setBorder(BorderFactory.createEmptyBorder(0, 10, 10, 10));
-
         add(bottomPanel, BorderLayout.SOUTH);
 
-        // Events
+        // Eventos
         readyButton.addActionListener(e -> onReady());
         lineButton.addActionListener(e -> out.println("CLAIM:LINE"));
         bingoButton.addActionListener(e -> out.println("CLAIM:BINGO"));
@@ -124,7 +137,6 @@ public class BingoClient extends JFrame {
                     showMessage("Conexão perdida com o servidor.");
                 }
             }).start();
-
         } catch (IOException e) {
             showMessage("Erro ao conectar ao servidor.");
         }
@@ -161,10 +173,33 @@ public class BingoClient extends JFrame {
         } else if (msg.startsWith("DRAW:")) {
             String number = msg.substring(5);
             SwingUtilities.invokeLater(() -> {
+                // Adicionar número à lista de sorteados
+                drawnNumbers.add(number);
+                
+                // Adicionar número ao painel
                 JLabel label = new JLabel(number);
                 label.setFont(new Font("Segoe UI", Font.BOLD, 16));
+                label.setBorder(BorderFactory.createEmptyBorder(2, 5, 2, 5));
                 drawnNumbersPanel.add(label);
                 drawnNumbersPanel.revalidate();
+
+                // Destacar número no cartão se existir
+                for (JButton btn : cardButtons) {
+                    if (btn.getText().equals(number)) {
+                        btn.setFont(btn.getFont().deriveFont(Font.BOLD));
+                        btn.setForeground(Color.BLUE);
+                        btn.setBorder(BorderFactory.createLineBorder(Color.BLUE, 2));
+                    }
+                }
+
+                // Scroll automático para mostrar o último número
+                SwingUtilities.invokeLater(() -> {
+                    JScrollBar vertical = scrollPane.getVerticalScrollBar();
+                    vertical.setValue(vertical.getMaximum());
+                    drawnNumbersPanel.scrollRectToVisible(
+                        new Rectangle(0, drawnNumbersPanel.getHeight() - 1, 1, 1)
+                    );
+                });
             });
         } else if (msg.startsWith("LINE_BY:")) {
             String winner = msg.substring(8);
@@ -176,6 +211,8 @@ public class BingoClient extends JFrame {
             showMessage("Parabéns!");
         } else if (msg.equals("LOSE")) {
             showMessage("Ainda não foi desta. Tente novamente.");
+        } else if (msg.equals("INVALID_CLAIM")) {
+            showMessage("Pedido inválido. Ainda não tens linha ou bingo.");
         }
     }
 
